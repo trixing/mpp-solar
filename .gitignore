@@ -102,3 +102,6 @@ ENV/
 
 *.local
 .vscode/
+
+# vim temp files
+*~
