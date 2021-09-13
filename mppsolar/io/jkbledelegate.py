@@ -28,11 +28,18 @@ class jkBleDelegate(btle.DefaultDelegate):
         self.notificationData += bytearray(data)
         if not self._protocol.is_record_start(self.notificationData):
             log.debug(f"Not valid start of record - wiping data {self.notificationData}")
-            self.notificationData = bytearray()
-        if not self._protocol.is_record_correct_type(self.notificationData, self._record_type):
-            log.debug(f"Not expected type of record - wiping data {self.notificationData}")
-            # self.notificationData = bytearray()
+            self.notificationData = self.notificationData[20:]
+        #if not self._protocol.is_record_correct_type(self.notificationData, self._record_type):
+        #    log.debug(f"Not expected type of record - wiping data {self.notificationData}")
+        #    self.notificationData = bytearray()
+        if len(self.notificationData) > 300:
+            self.notificationData = self.notificationData[-300:]
         if self._protocol.is_record_complete(self.notificationData):
-            self._jkbleio.record = self.notificationData
-            log.debug("record complete")
+            if self._protocol.is_record_correct_type(self.notificationData, self._record_type):
+                self._jkbleio.record = self.notificationData[:300]
+                log.debug("record complete")
+            if self._protocol.is_record_correct_type(self.notificationData, 3): # getInfo
+                self._jkbleio.info_record = self.notificationData[:300]
+                log.debug("info record complete")
+                # print(self._jkbleio.info_record)
             self.notificationData = bytearray()

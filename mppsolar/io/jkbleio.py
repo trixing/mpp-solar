@@ -1,10 +1,13 @@
 from bluepy import btle
 import logging
 
-
 from .baseio import BaseIO
 from ..helpers import get_kwargs
 from .jkbledelegate import jkBleDelegate
+import sys
+import time
+
+# btle.Debugging = True
 
 log = logging.getLogger("JkBleIO")
 
@@ -46,6 +49,7 @@ class JkBleIO(BaseIO):
         """
         self._device = None
         # Intialise BLE device
+        print('Connect')
         self._device = btle.Peripheral(None)
         self._device.withDelegate(jkBleDelegate(self, protocol, record_type))
         # Connect to BLE Device
@@ -60,7 +64,8 @@ class JkBleIO(BaseIO):
             try:
                 self._device.connect(mac)
                 connected = True
-            except Exception:
+            except Exception as e:
+                print(e)
                 continue
         return connected
 
@@ -72,13 +77,18 @@ class JkBleIO(BaseIO):
 
     def ble_get_data(self, command=None):
         self.record = None
+        self.info_record = None
 
         if command is None:
             return self.record
 
         # Get the device name
         serviceId = self._device.getServiceByUUID(btle.AssignedNumbers.genericAccess)
-        deviceName = serviceId.getCharacteristics(btle.AssignedNumbers.deviceName)[0]
+        names = serviceId.getCharacteristics(btle.AssignedNumbers.deviceName)
+        if not names:
+            log.error('No service name characteristics found')
+            return None
+        deviceName = names[0]
         log.info("Connected to {}".format(deviceName.read()))
 
         # Connect to the notify service
@@ -88,7 +98,11 @@ class JkBleIO(BaseIO):
         # Get the handles that we need to talk to
         # Read
         characteristicReadUuid = "ffe3"
-        characteristicRead = serviceNotify.getCharacteristics(characteristicReadUuid)[0]
+        chars = serviceNotify.getCharacteristics(characteristicReadUuid)
+        if not chars:
+            log.error('No service characteristics found')
+            return None
+        characteristicRead = chars[0]
         handleRead = characteristicRead.getHandle()
         log.info("Read characteristic: {}, handle {:x}".format(characteristicRead, handleRead))
 
@@ -99,29 +113,35 @@ class JkBleIO(BaseIO):
         log.info(
             "Write getInfo to read handle", self._device.writeCharacteristic(handleRead, getInfo)
         )
-        secs = 0
+        now = time.time()
         while True:
-            if self._device.waitForNotifications(1.0):
-                continue
-            secs += 1
+            secs = time.time() - now
+            if self.info_record:
+                break
             if secs > 5:
                 break
+            self._device.waitForNotifications(1.0)
 
         log.info(
             "Write command to read handle",
             self._device.writeCharacteristic(handleRead, command),
         )
-        loops = 0
-        recordsToGrab = 1
-        log.info("Grabbing {} records (after inital response)".format(recordsToGrab))
 
+        now = time.time()
         while True:
-            loops += 1
-            if loops > recordsToGrab * 15 + 16:
-                log.info("jkbleio: ble_get_dataa: Got {} records".format(recordsToGrab))
+            secs = time.time() - now
+            if self.record:
                 break
-            if self._device.waitForNotifications(1.0):
-                continue
+            if secs > 5:
+                break
+            self._device.waitForNotifications(1.0)
 
-        log.debug(f"Record now {self.record} len {len(self.record)}")
+        log.info("Disable read handle", self._device.writeCharacteristic(handleRead, b"\x00\x00"))
+        log.info("Disable 0x0b handle", self._device.writeCharacteristic(0x0B, b"\x00\x00"))
+        if self.record:
+             log.debug(f"Record now {self.record} len {len(self.record)}")
+        else:
+             log.warning(f"Record not found")
+             return None
         return self.record[-300:]
+

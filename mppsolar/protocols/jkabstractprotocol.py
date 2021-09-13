@@ -156,12 +156,19 @@ class jkAbstractProtocol(AbstractProtocol):
             log.debug("No SOR found in record looking for completeness")
             return False
         # check that length one of the valid lengths (300, 320)
-        if len(record) == 300 or len(record) == 320:
+        if len(record) != 300 and len(record) <= 320:
+            log.debug("Record length is invalid %d" % len(record))
+            return False
+        for n in [300, 320]:
+            if len(record) < n:
+                continue
             # check the crc/checksum is correct for the record data
-            crc = ord(record[-1:])
-            calcCrc = crc8(record[:-1])
+            crc = ord(record[n-1:n])
+            #crc = record[n-1] # ord(record[n-1:n])
+            calcCrc = crc8(record[:n-1])
             # print (crc, calcCrc)
             if crc == calcCrc:
-                log.debug("Record CRC is valid")
+                log.debug("Record CRC is valid: %d" % n)
                 return True
+        log.debug("No valid CRC found")
         return False
